@@ -26,12 +26,25 @@ class Chunk:
     chunk_index: int
     start_token: int
     end_token: int
+    company: str
+    fiscal_year: int
+    section: str
 
 
-def chunk_document(text: str, tokenizer, chunk_size: int, overlap: int, source: str = "",) -> list[Chunk]:
+def chunk_document(
+    text: str,
+    tokenizer,
+    chunk_size: int,
+    overlap: int,
+    *,
+    company: str,
+    fiscal_year: int,
+    section: str,
+    source: str = "",
+) -> list[Chunk]:
     token_ids = tokenizer.encode(text, add_special_tokens=False)
 
-    # BLANK A: compute step; raise if overlap >= chunk_size
+    # compute step; raise if overlap >= chunk_size
     
     if overlap >= chunk_size:
         raise ValueError(f"Overlap must be smaller than chunk size: {overlap} >= {chunk_size}")
@@ -42,16 +55,21 @@ def chunk_document(text: str, tokenizer, chunk_size: int, overlap: int, source: 
     for start in range(0, len(token_ids), step):  # iterate over starting positions
         window = token_ids[start : start + chunk_size]   # actual token ids
         actual_start = start
+
         while window and tokenizer.convert_ids_to_tokens(window)[0].startswith("##"):
-          window = window[1:]
-          actual_start += 1
+            window = window[1:]
+            actual_start += 1
+
         chunks.append(
             Chunk(
                 text=tokenizer.decode(window),
                 source=source,
                 chunk_index=len(chunks),
-                start_token=start,
-                end_token=start + len(window)   # works for full and partial windows
+                start_token=actual_start,
+                end_token=actual_start + len(window),
+                company=company,
+                fiscal_year=fiscal_year,
+                section=section,
             )
         )
     return chunks

@@ -13,9 +13,23 @@ def main() -> None:
     settings.cache_dir.mkdir(exist_ok=True)
     tok = AutoTokenizer.from_pretrained(settings.embed_model)
 
+    docs = load_corpus(settings.corpus_dir)
+    print(f"{len(docs)} section documents")
+
     chunks = []
-    for doc in load_corpus(settings.corpus_dir):
-        chunks.extend(chunk_document(doc.text, tok, settings.chunk_size, settings.chunk_overlap))
+    for doc in docs:
+        chunks.extend(
+            chunk_document(
+                doc.text,
+                tok,
+                settings.chunk_size,
+                settings.chunk_overlap,
+                company=doc.company,
+                fiscal_year=doc.fiscal_year,
+                section=doc.section,
+                source=doc.source,
+            )
+        )
     print(f"{len(chunks)} chunks")
 
     emb = Embedder(settings.embed_model, settings.cache_dir).encode_passages([c.text for c in chunks])

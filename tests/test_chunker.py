@@ -7,8 +7,11 @@ TOK = AutoTokenizer.from_pretrained("BAAI/bge-small-en-v1.5")
 TEXT = " ".join(f"word{i}" for i in range(400))  # ~hundreds of tokens
 
 
+_META = {"company": "TEST", "fiscal_year": 2024, "section": "Item 1A"}
+
+
 def _chunks(size=100, overlap=20):
-    return chunk_document(TEXT, TOK, chunk_size=size, overlap=overlap)
+    return chunk_document(TEXT, TOK, chunk_size=size, overlap=overlap, **_META)
 
 
 def test_produces_chunks():
@@ -36,4 +39,4 @@ def test_full_coverage():
 
 def test_overlap_must_be_smaller_than_size():
     with pytest.raises((ValueError, AssertionError)):
-        chunk_document(TEXT, TOK, chunk_size=50, overlap=50)
+        chunk_document(TEXT, TOK, chunk_size=50, overlap=50, **_META)
