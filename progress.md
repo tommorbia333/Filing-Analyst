@@ -102,8 +102,8 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Component | Choice | Why (your words) | Alternatives you considered |
 |---|---|---|---|
 | Chunking | fixed-size token + overlap | groups together text for quicker processing and better context retrieval | |
-| Chunk metadata | `{company, fiscal_year, section}` per chunk | | |
-| Embedding model | bge-small-en-v1.5 | | |
+| Chunk metadata | `{company, fiscal_year, section}` per chunk | chunked data after it was crawled/scraped by EDGAR, used the keywords and prepared for embedding | |
+| Embedding model | bge-small-en-v1.5 | Smaller size, free, API stays simple | larger models, considered other small models such as BAAI/bge-base-en-v1.5 and text-embedding-3-small (which would have required an API |
 | Retrieval (wk1) | brute-force cosine | | |
 | Vector store (wk2) | Postgres + pgvector + FTS | | |
 | Generator | Claude Haiku 4.5 | | |
@@ -168,9 +168,20 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 
 **Questions to answer:**
 1. What does a dense embedding give you that keyword matching cannot? And what can keyword matching do that embeddings are bad at? (Hold onto the second half — it's the whole reason hybrid retrieval exists. On this corpus, think about exact tokens like a specific fiscal year, a dollar figure, or a form-item number.)
+
+    a. A dense embedding gives us better context retrieval than keyword matching. It allows us to see the nearest neighbors to a query, understanding the surrounding geometry rather than just the singular answer, letting us build a better response. This is beneficial for answering more complex questions that require a broader understanding of the data rather than fetching specific answers; on the other hand, using keyword matching is beneficial for finding specific points in the data that might appear near identical across the KB.
+
 2. Why `bge-small-en-v1.5` rather than a larger open model or a hosted API like `text-embedding-3-large`? List the axes of that tradeoff.
+
+    a. For cost and latency reasons. This can also be run locally; however, the plan is to expand to a larger model to practice later on. The other benefit here is that there is no API dependency. A larger, legacy model would require tokens to be purchased as well as an API to be configured. The downside is that this smaller model may cause some temporal confusion on these near-duplicate yearly filings; however, for this small-scale project, we will assume this won't be a major issue and will revisit this if necessary.
+
 3. The embedder L2-normalizes vectors. What does that let you simplify at search time, and why?
+
+    a. By normalizing the vector, all of the values get fitted into the same unit length (norm=1). This allows for quicker comparison between values. 
+
 4. The code prepends an instruction to *queries* but not *passages*. Why the asymmetry?
+
+    a. If we prepend the instruction to passages, it will convolute the results. By putting the instruction to query, it puts the model in query mode before searching through indexed passages. 
 
 **Definition of done:** index builds · questions answered · log row filled · committed.
 
