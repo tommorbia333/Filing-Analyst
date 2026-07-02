@@ -21,7 +21,7 @@ def main() -> None:
 
     print("\n-- retrieved --")
     for score, c in hits:
-        print(f"[{score:.3f}] {c.source}: {c.text[:80]}...")
+        print(f"[{score:.3f}] FY{c.fiscal_year} {c.section}: {c.text[:80]}...")
 
     print("\n-- answer --")
     print(generate(question, [c for _, c in hits]))

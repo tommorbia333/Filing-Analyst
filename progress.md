@@ -11,7 +11,7 @@
 
 ## How to use this handbook
 
-- Work **top to bottom**. Do not open 🔒 sealed phases early — they're sealed so new terminology arrives only when you're ready for it.
+- Work **top to bottom**. Do not open 🔒 sealed phases early — they're sealed so new terminology arrives only when you're ready for it. Phase 4 (API + agent) and Phase 5 (production) are sketched but locked until Weeks 1–3 (and Phase 4, for Phase 5) are complete.
 - At each station: do the **Tasks**, then write your own answers to the **Questions** in the *Notes & answers* space. Fill the matching row in the **Design decisions log**.
 - A station is done only when its **Definition of done** is met. Then advance.
 - Use **Cursor** for implementation help and **this chat** for mentoring, quizzing, and unlocking the next phase. When a phase completes, the chat regenerates this handbook with the next phase expanded.
@@ -35,7 +35,7 @@
 
 **Data note:** the corpus is a single company's 10-K filings, parsed into their standard sections with `{company, fiscal_year, section}` metadata per record. Prefer a pre-parsed EDGAR dataset (e.g. `eloukas/edgar-corpus`, which already splits filings into sections with `cik`/`year`) or `edgar-crawler` JSON output over writing a filing parser from scratch — parsing raw HTML filings is a time-sink and not the point of the project.
 
-**Current state:** see the Progress tracker below. The active task is whatever is marked 📍.
+**Current state:** see the Progress tracker below. The active task is whatever is marked 📍. Phases 4–5 are sealed previews — do not implement or expand them until the human unlocks them after Week 3 / Phase 4 respectively.
 
 ---
 
@@ -78,7 +78,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Retrieval (wk2) | Postgres + pgvector (dense) + FTS (keyword), metadata-filtered hybrid |
 | Generator | Claude Haiku 4.5 |
 | Judge | Claude Sonnet (faithfulness) |
-| Interface | typer CLI (wk1) → small UI (wk3) |
+| Interface | typer CLI (wk1) → small UI (wk3) → FastAPI (phase 4) |
 
 ---
 
@@ -94,6 +94,8 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Wk1 | 5 · Basic evaluation (retrieval gold) | ⬜ |
 | Wk2 | Hybrid + storage + eval harness | 🔒 sealed |
 | Wk3 | Polish, cost/latency, UI | 🔒 sealed |
+| Phase 4 | API + agent loop + one legacy hook | 🔒 sealed |
+| Phase 5 | Production slice + second integration | 🔒 sealed |
 
 ---
 
@@ -103,7 +105,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 |---|---|---|---|
 | Chunking | fixed-size token + overlap | groups together text for quicker processing and better context retrieval | |
 | Chunk metadata | `{company, fiscal_year, section}` per chunk | chunked data after it was crawled/scraped by EDGAR, used the keywords and prepared for embedding | |
-| Embedding model | bge-small-en-v1.5 | Smaller size, free, API stays simple | larger models, considered other small models such as BAAI/bge-base-en-v1.5 and text-embedding-3-small (which would have required an API |
+| Embedding model | bge-small-en-v1.5 | Smaller size, free, API stays simple | larger models, considered other small models such as BAAI/bge-base-en-v1.5 and text-embedding-3-small (which would have required an API) |
 | Retrieval (wk1) | brute-force cosine | | |
 | Vector store (wk2) | Postgres + pgvector + FTS | | |
 | Generator | Claude Haiku 4.5 | | |
@@ -269,6 +271,110 @@ Unlocks when Week 1 is complete. Preview only: move off brute-force into Postgre
 # Phase 3 — Week 3: polish, cost/latency, UI  🔒 SEALED
 
 Unlocks after Week 2. Preview only: small UI, measured latency and cost-per-query, finalized README + error analysis.
+
+---
+
+# Phase 4 — API + agent loop + one legacy hook  🔒 SEALED
+
+Unlocks when Week 3 is complete. **Do not start early** — this phase assumes hybrid retrieval, faithfulness eval, and a working UI/CLI are already defensible.
+
+**North star:** turn the RAG pipeline into a thin **live service** with an **explicit, framework-free agent loop** and **one** legacy integration story you can demo end-to-end in an interview. Deliberately small — no generic agent platform, no second vector DB, no auth layer yet.
+
+**Hard rules carry forward:**
+1. **No orchestration frameworks.** No LangGraph, CrewAI, AutoGen, LangChain agents. The loop is a plain Python `while` / state machine you can whiteboard.
+2. **Thin API.** FastAPI routes call existing `rag` modules — no business logic duplicated in route handlers.
+3. **One integration.** Pick a single legacy touchpoint (see Station 2). A mocked backend is fine if the adapter interface is real.
+
+**Stack additions (phase 4 only):** FastAPI · `uvicorn` · optional `httpx` for the legacy adapter. Postgres from Week 2 remains the store — do not introduce a separate vector DB here.
+
+### Station 0 — FastAPI wrapper
+
+**Objective:** expose the existing ask pipeline over HTTP without changing retrieval or generation behavior.
+
+**Tasks:**
+1. Add `src/rag/api/` (or `scripts/serve.py` + thin router module) with `POST /query` (question in → grounded answer + cited chunks out) and `GET /health`.
+2. Wire routes to the same code path `make ask` uses — one implementation, two entry points.
+3. Log each query to Postgres (question, retrieved chunk ids, latency ms, model) — reuse the Week 2 DB connection pattern.
+4. Add `make serve` to run locally.
+
+**Questions to answer:**
+1. Why keep the API layer thin instead of putting retrieval logic in route handlers?
+2. What belongs in the response body vs. what should stay server-side only (e.g. full prompt, raw embeddings)?
+3. What breaks if CLI and API drift to two different code paths?
+
+**Definition of done:** `curl POST /query` returns the same answer as `make ask` for the same question · queries logged · committed.
+
+**Notes & answers:**
+```
+(write here)
+```
+
+---
+
+### Station 1 — Explicit agent loop + tool registry
+
+**Objective:** a minimal multi-step workflow — plan → tool call(s) → generate — with no hidden framework magic.
+
+**Tasks:**
+1. Define 2–3 tools as plain Python callables with typed inputs/outputs, e.g. `search_filings(query, fiscal_year?, section?)`, `list_available_years()`, `compare_passages(year_a, year_b, topic)` — each wraps existing retrieval/SQL, not new logic.
+2. Implement a simple loop in `src/rag/agent/loop.py`: LLM receives tool schemas → emits structured JSON (tool name + args) → you execute → feed results back → repeat until `finish` or max steps (cap at ~5).
+3. Add `POST /agent/query` that runs the loop and returns the final answer plus a **trace** (which tools fired, in what order).
+4. Sanity-check: one question that needs a metadata filter *and* a semantic search should route through `search_filings` with the right args — not brute-force retrieve everything.
+
+**Questions to answer:**
+1. Why cap max agent steps, and what failure mode does an uncapped loop have?
+2. When is a deterministic router (if year in question → always filter) better than letting the LLM choose tools every time?
+3. What goes in the trace for debugging vs. what you would never expose to an end user?
+
+**Definition of done:** agent endpoint completes at least one multi-step query · trace is inspectable · no orchestration framework in `pyproject.toml` · committed.
+
+**Notes & answers:**
+```
+(write here)
+```
+
+---
+
+### Station 2 — One legacy hook
+
+**Objective:** one credible "connects to the outside world" story — ingest trigger or metadata enrichment from a system that isn't your corpus files.
+
+**Tasks:**
+1. Pick **one** integration (choose before coding — write the choice in the Design decisions log):
+   - **Ingest webhook:** `POST /ingest/filing` accepts a new filing payload (or file path) → runs existing ingest → chunk → embed → upsert into Postgres. Simulates SFTP drop or EDGAR poll.
+   - **Metadata adapter:** a read-only client to a mock ERP that returns `{company, fiscal_year, active_sections}` the agent uses to disambiguate before retrieval. Simulates SAP/Oracle master data.
+2. Implement the adapter behind a small interface (`LegacySource` or similar) so the rest of the system depends on the interface, not the mock.
+3. Demo path: external event → adapter/webhook → index update (or metadata fetch) → agent query returns answer using fresh data.
+
+**Questions to answer:**
+1. Why interface + mock rather than hard-coding the mock behavior into the agent loop?
+2. What idempotency concern does the ingest webhook have (same filing submitted twice)?
+3. How would you swap the mock for a real system without rewriting the agent or API?
+
+**Definition of done:** one end-to-end demo script or README section · adapter interface exists · Design-log row filled · committed. **→ Phase 4 complete; ask the chat to unlock Phase 5.**
+
+**Notes & answers:**
+```
+(write here)
+```
+
+---
+
+# Phase 5 — Production slice + second integration  🔒 SEALED
+
+Unlocks when Phase 4 is complete. **Preview only** — detail expands when you reach it. This is the longer-horizon goal; do not scope-creep into it during Weeks 1–3 or Phase 4.
+
+**Intent:** move from "portfolio demo" to "something you could plausibly deploy for a small internal team" — still one repo, still explicit code, still no agent framework.
+
+Likely themes (pick a subset when unlocked — not all at once):
+- **Async indexing:** background job queue for re-index when filings arrive (e.g. `arq` or a simple Postgres-backed job table — avoid Celery unless you have a reason).
+- **Auth + tenancy:** API key or JWT; separate corpora per tenant if you want a stronger enterprise story.
+- **Observability:** structured logs, query/error dashboards, cost-per-query aggregation from Phase 4 logs.
+- **Second legacy adapter:** a different system type (e.g. ticket queue, CRM note) to show the adapter pattern generalizes — reuses Phase 4's interface, not a rewrite.
+- **Deployment story:** Docker Compose (Postgres + API + optional UI) or a single-cloud deploy doc with measured cold-start and p95 latency.
+- **Optional vector-store comparison:** benchmark pgvector vs. one managed store (Pinecone/Qdrant) on *your* eval set — document when you'd switch and when you wouldn't.
+
+**Explicit non-goals for Phase 5:** multi-region HA, custom embedding fine-tuning, a general-purpose agent SDK, or supporting every legacy protocol. Stop when one deployment + one second integration is demoable.
 
 ---
 
