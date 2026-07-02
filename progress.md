@@ -113,13 +113,19 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 **Questions to answer (no peeking — these are interview bait):**
 1. Why chunk at all instead of embedding each article whole? There are two distinct reasons — one is a hard constraint, one is about retrieval quality. Name both.
    
-    a. Chunking lets us break larger texts into more manageable pieces; by doing so, we bypass the max limit that a program is able to process and we are also able to include better context across the dataset, improving retrieval and generation.
+   a. Chunking lets us break larger texts into more manageable pieces; by doing so, we bypass the max limit that a program is able to process and we are also able to include better context across the dataset, improving retrieval and generation.
+   b. When we input a corpus as one singular vector, that vector becomes the average of all of the values across the text/corpus. This means that a query about one specific fact in a given paragraph might get diluted or twisted by attention given to other facts in other paragraphs; not having a clean-cut difference between vectors therefore can reduce retrieval accuracy. 
    
-3. `chunk_size` is set to 256 even though the embedder's window is 512. Why might going deliberately *smaller* than the max be the better choice — and what breaks if you go too small?
-    a. Going smaller than the max is the better choice because it improves precision. Going too small, however, could lead to the chunks including too precise of information that doesn't generalize well across the dataset (and therefore has worse context retrieval).  
-4. What concrete failure does `overlap=0` cause on this corpus? And what goes wrong if overlap is *too* large (e.g. 200 of 256)?
-    a. If overlap=0, then there won't be any context across each chunk. If the overlap is too large, then the chunking would reiterate over the same chunk over and over, or fail because it can't pull information larger than the context window. 
-5. You chunk using the embedding model's own tokenizer. What silently goes wrong if you instead chunk by character count or word count?
+2. `chunk_size` is set to 256 even though the embedder's window is 512. Why might going deliberately *smaller* than the max be the better choice — and what breaks if you go too small?
+
+    a. Going smaller than the max is the better choice because it improves precision. Going too small, however, could lead to information being cutoff during retrieval, leading to retrieval that may not have all of the relevant information (and therefore has worse context retrieval).
+   
+3. What concrete failure does `overlap=0` cause on this corpus? And what goes wrong if overlap is *too* large (e.g. 200 of 256)?
+   
+    a. If overlap=0, then there won't be any context across each chunk; if a fact is spread across both chunks, it will be cutoff, leading to issues when retrieving certain facts. If the overlap is too large, then the chunking produce chunks with similar or near-identical information, which causes problems when retrieving information as it can bloat storage/slow retrieval but also skew results if the same content reappears over and over again.
+   
+4. You chunk using the embedding model's own tokenizer. What silently goes wrong if you instead chunk by character count or word count?
+   
     a. Depending on the size of the corpus, the context could be totally different and the requirements also totally different. So, the tokens that it produces for a given set of text, character count, or word count could be too long and then truncated without the user knowing. 
 
 **Definition of done:** tests green · all four questions answered in Notes · Design-log row filled · committed as `feat: token chunker`.
