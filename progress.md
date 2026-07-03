@@ -106,9 +106,9 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Chunking | fixed-size token + overlap | groups together text for quicker processing and better context retrieval | |
 | Chunk metadata | `{company, fiscal_year, section}` per chunk | chunked data after it was crawled/scraped by EDGAR, used the keywords and prepared for embedding | |
 | Embedding model | bge-small-en-v1.5 | Smaller size, free, API stays simple | larger models, considered other small models such as BAAI/bge-base-en-v1.5 and text-embedding-3-small (which would have required an API) |
-| Retrieval (wk1) | brute-force cosine | | |
+| Retrieval (wk1) | brute-force cosine | practices checking all of the chunks rather than only looking at ANN algorithms | alternative (and will be implemented down stream) would be ANN, more efficient |
 | Vector store (wk2) | Postgres + pgvector + FTS | | |
-| Generator | Claude Haiku 4.5 | | |
+| Generator | Claude Haiku 4.5 | Strong, legacy model to implement, easy to use, lower cost than implementing Opus or a more expensive model especially since we just need a quick generator | |
 
 ---
 
@@ -204,8 +204,16 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 
 **Questions to answer:**
 1. What is cosine similarity measuring geometrically, and why is it the right choice for these (normalized) vectors?
+
+    a. Cosine similarity is measuring the similarity of direction between two vectorized chunks in a geometric space. This is the right choice for normalized vectors because it tells the model what context is relevant when pulling data to produce a response. 
+
 2. Brute-force search is O(?) in the number of chunks. At what corpus size does that stop being acceptable, and what *family* of algorithm/structure replaces it? (You don't need to implement it — just name it and the tradeoff it makes.) Note: for a single company's filings the corpus is modest, so the Week 2 move to pgvector is motivated less by raw speed and more by metadata filtering, keyword fusion, and persistence — be ready to say that out loud.
+
+    a. Brute-force search stops being acceptable when the corpus size scales to a significantly large size because it takes too long to run. Approximate nearest neighbor and semantic vector search could both replace brute-force search, which only explore the nearest neighbors to the found semantic vector index rather than searching through the entire corpus. 
+
 3. `top_k` is a knob. What goes wrong if it's too small? Too large? How does its best value interact with your chunk size?
+
+    a. If top_k is too small, then the retrieval could miss some relevant information that is just outside of the scope of the top_k set by us; if it's too large, it could retrieve information that isn't contextually relevant and impact the generated response. Its best value interacts with chunk size depending on what our goal is; if we want higher precision, we would have a larger top_k, meaning we retrieve more chunks, with each chunk being smaller so that they're each more specific to the query being asked. A larger chunk size and smaller top_k would be better for a more summarization-based approach, allowing us to have a broader part of the text pulled but less specific information. 
 
 **Definition of done:** retrieval returns sensible chunks · questions answered · committed.
 
@@ -227,9 +235,24 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 
 **Questions to answer:**
 1. Which API failures are worth *retrying* and which should fail fast? Why retry some and not others?
+
+    a. API failures that are worth retrying are RateLimitError, 
+        APIConnectionError,
+        APITimeoutError, 
+        OverloadedError,
+        because they are not necessarily the fault of the user; however, a bad authentication should fail fast rather than retrying since that just means the user is not authenticated to use the platform. 
+
 2. Why exponential backoff *with jitter*, rather than a fixed delay or plain exponential? What specifically does jitter prevent?
+
+    a. Using jitter prevents the thundering herd problem, which means when multiple users are timed out but retry again and again at the same time since they are spaced out equally. When we implement jitter, it spaces out the retries, stressing the system less. 
+
 3. What's the failure mode if you don't cap the number of retries?
+
+    a. A cascading architectural crises; a single issue can cascade and break the entire system by overloading it. We are avoiding infiite retries which would lead to hung requests, wasted spend from tokens, and amplified load on a struggling API. 
+
 4. Estimate your cost-per-query: take your typical input tokens (system + context + question) and output tokens, and compute the Haiku cost. Write the number and the assumptions. (This becomes a README section.)
+
+    a. $0.003/query. Each input is roughly ~1500 tokens, the output is roughly ~250 tokens. The math would be: cost ≈ (1500/1e6)*1 + (250/1e6)*5 ≈ $0.0015 + $0.00125 ≈ $0.003/query
 
 **Definition of done:** end-to-end answer works · retries handle a forced failure · questions answered · log row filled · committed.
 
@@ -249,11 +272,25 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 2. Implement `hit_rate_at_k` and `mrr_at_k` in `src/rag/eval/metrics.py`.
 3. Run them over your gold set; record the numbers.
 
+    a. After running over the gold set, the hit_rate@5 is 0.385 (5/13 queries). The mrr@5 is 0.179. Often, the right topic was selected but from the wrong year; what this means is that the current RAG is struggling with the similar data in the corpus since over each year the data changes slightly. This is relevant for our next step, which would be implementing a hybrid search.
+
 **Questions to answer:**
 1. What's the difference between evaluating *retrieval* (did the right passage surface?) and *faithfulness* (did the answer stay grounded in what surfaced?)? Why measure them separately rather than just grading final answers for correctness?
+
+    a. The difference between evaluating retrieval and faithfulness is that retrieval is can be measured directly by a value, meaning whether or not it is correct is binary: it's either yes or no. Meanwhile, faithfulness is something that is a bit harder to evaluate as it is more content based, meaning you need some sort of a 'judge' to determine its correctness (either through a human or an LLM-as-judge). 
+
 2. Define hit-rate@k and MRR in your own words. What does each one *fail* to capture?
+
+    a. Hit-rate@k refers to whether or not the pulled chunks have a relevant item given the query. It essentially asks, out of the number of queries, how many resulted in a relevant document being pulled; one thing that this fails to capture is whether the system fails to capture the relevant information because of insufficient data or because it is a faulty model. It also doesn't provide any kind of ranking.
+    b. MRR measures the average position of the first relevant item. If the first relevant item shows up in rank position 3, then it is given a score of 0.333. This tells us how quickly relevant items are picked up, telling us the speed of the program and is useful when a search tool needs to find one specific piece of information rather than a broader context.
+
 3. How will you decide a retrieved chunk counts as "relevant" for a given gold question? On this corpus the sharp case is the year: if the right passage exists in three fiscal years, does retrieving the *wrong* year's near-identical passage count as a hit? What's the failure mode of whichever rule you pick?
+
+    a. I will decide if a retrieved chunk counts as 'relevant' by its content and closeness to the desired year. If it contains relevant keywords, and fits the given year, then it can be deemed relevant; additionally, depending on the query, the question might ask for adjacent years in order to make a relevant comparison. This convolutes things but demonstrates the importance of having an evaluation harness that measures nearest neighbor strength and not just direct, uniform binary comparison of 'correct' or 'incorrect'. The failure mode would be dependent on the importance of the query; however, it would revolve around the fetched top_k results not containing close enough years, relevant keywords, etc.
+
 4. What makes a *good* gold question here? (Hint: one where asking the same thing about a different fiscal year yields a different answer, so retrieval is forced to use the year — a question any year could answer tests nothing.)
+
+    a. A good gold question here would have to do with specific yearly reports, such as quantities that fluctuate year-over-year, or anything that might appear structurally similar across years but differ in valuable content. 
 
 **Definition of done:** gold set exists · metrics implemented and run · numbers recorded · questions answered · committed. **→ Week 1 complete; ask the chat to unlock Phase 2.**
 

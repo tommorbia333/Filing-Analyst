@@ -10,3 +10,5 @@ Future design to implement: build a two-layer and resolution cache.
 Design: 
 
 Also used EDGAR to scrape the data to speed up the crawling process
+
+Would also be good to implement some form of 'gated' data so that we practice proper authentication steps/maybe even tools that the agentic AI can only use if a certain user is using the platform
