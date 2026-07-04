@@ -8,3 +8,4 @@ data/corpus/INDICES/
 data/corpus/companies_info.json
 /Old data
 .cache/
+.env.example

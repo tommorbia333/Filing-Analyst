@@ -25,6 +25,10 @@ class Settings:
     judge_model: str = "claude-sonnet-4-6"
 
     @property
+    def database_url(self) -> str | None:
+        return os.environ.get("DATABASE_URL")
+
+    @property
     def anthropic_api_key(self) -> str:
         key = os.environ.get("ANTHROPIC_API_KEY")
         if not key:

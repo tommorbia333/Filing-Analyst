@@ -11,3 +11,22 @@
 {"question": "What were some uncertain tax positions in FY2019?", "fiscal_year": 2019, "section": "Item 7", "match_text": "tax positions"}
 {"question": "How did Microsoft's acquisition of GitHub in FY2019 impact the products and clients that Microsoft can target?", "fiscal_year": 2019, "section": "Item 1A", "match_text": "GitHub"}
 {"question": "By how much did Microsoft's operating income change from FY2022 to FY2023?", "fiscal_year": 2023, "section": "Item 7", "match_text": "operating income"}
+
+
+// No absence case. We discussed this and it's missing. 
+// Add at least one: "In FY2019, what did Microsoft say about Copilot?" — correct answer is nothing, it didn't exist. 
+// That's the presence/absence test, and it's a different (valuable) species from disambiguation.
+
+// match_text instead of chunk_id. You simplified the gold schema to a single keyword. 
+// Fine at this scale, but be aware of the consequence: 
+// for boilerplate topics ("economic", "AI", "political") that token appears in every year, 
+// so match_text pins nothing — your (fiscal_year, section) pair is doing 100% of the disambiguation. 
+// State that relevance rule explicitly ("a hit = retrieved chunk whose year+section match gold"), 
+// because an interviewer will ask how you scored these.
+
+// Two to verify: "uncertain tax positions" (FY2019) is almost certainly in the financial-statement notes (Item 8), 
+// not MD&A (Item 7) — check the section label. 
+// And the two comparison questions ("highlights FY2025 vs FY2024", "operating income FY2022→FY2023") 
+// are only clean if the single filing's MD&A contains that year-over-year line (it usually does). 
+// True cross-filing comparisons don't fit single-context gold — 
+// and that's the natural job of the compare_passages tool in your Phase 4 agent. Nice seam.

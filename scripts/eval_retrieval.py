@@ -12,6 +12,7 @@ from rag.embed.embedder import Embedder
 from rag.eval.metrics import hit_rate_at_k, mrr_at_k
 from rag.ingest.chunker import Chunk
 from rag.retrieve.dense import DenseIndex
+from rag.retrieve.pg_dense import PgDenseIndex
 
 
 def load_gold(path: Path) -> list[dict]:
@@ -39,12 +40,17 @@ def is_relevant(chunk: Chunk, gold: dict) -> bool:
 
 def main() -> None:
     gold = load_gold(settings.qa_path)
-    emb = np.load(settings.cache_dir / "embeddings.npy")
-    with open(settings.cache_dir / "chunks.pkl", "rb") as f:
-        chunks = pickle.load(f)
-
-    index = DenseIndex(emb, chunks)
     embedder = Embedder(settings.embed_model, settings.cache_dir)
+
+    if settings.database_url:
+        index = PgDenseIndex.from_dsn(settings.database_url)
+        backend = "pgvector"
+    else:
+        emb = np.load(settings.cache_dir / "embeddings.npy")
+        with open(settings.cache_dir / "chunks.pkl", "rb") as f:
+            chunks = pickle.load(f)
+        index = DenseIndex(emb, chunks)
+        backend = "numpy"
     k = settings.top_k
 
     rankings: list[list[bool]] = []
@@ -56,6 +62,7 @@ def main() -> None:
     hr = hit_rate_at_k(rankings, k)
     mrr = mrr_at_k(rankings, k)
 
+    print(f"backend: {backend}")
     print(f"queries: {len(gold)}")
     print(f"hit_rate@{k}: {hr:.3f}")
     print(f"mrr@{k}:       {mrr:.3f}")

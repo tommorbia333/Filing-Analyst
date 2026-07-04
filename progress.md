@@ -87,12 +87,16 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Phase | Station | Status |
 |---|---|---|
 | Wk1 | 0 · Scaffold + tooling | ✅ done |
-| Wk1 | 1 · Token chunker | 📍 **active** |
-| Wk1 | 2 · Embedding | ⬜ |
-| Wk1 | 3 · Dense retrieval (brute force) | ⬜ |
-| Wk1 | 4 · Generation + rate limiting | ⬜ |
-| Wk1 | 5 · Basic evaluation (retrieval gold) | ⬜ |
-| Wk2 | Hybrid + storage + eval harness | 🔒 sealed |
+| Wk1 | 1 · Token chunker | ✅ done |
+| Wk1 | 2 · Embedding | ✅ done |
+| Wk1 | 3 · Dense retrieval (brute force) | ✅ done |
+| Wk1 | 4 · Generation + rate limiting | ✅ done |
+| Wk1 | 5 · Basic evaluation (retrieval gold) | ✅ done — hit@5 0.385 / MRR@5 0.179 |
+| Wk2 | 6 · Postgres + pgvector store | 📍 **active** |
+| Wk2 | 7 · Keyword retrieval (BM25/FTS) | ⬜ |
+| Wk2 | 8 · Hybrid fusion (RRF) | ⬜ |
+| Wk2 | 9 · Metadata filter + re-measure | ⬜ |
+| Wk2 | 10 · Faithfulness judge + scale gold | ⬜ |
 | Wk3 | Polish, cost/latency, UI | 🔒 sealed |
 | Phase 4 | API + agent loop + one legacy hook | 🔒 sealed |
 | Phase 5 | Production slice + second integration | 🔒 sealed |
@@ -107,12 +111,16 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Chunk metadata | `{company, fiscal_year, section}` per chunk | chunked data after it was crawled/scraped by EDGAR, used the keywords and prepared for embedding | |
 | Embedding model | bge-small-en-v1.5 | Smaller size, free, API stays simple | larger models, considered other small models such as BAAI/bge-base-en-v1.5 and text-embedding-3-small (which would have required an API) |
 | Retrieval (wk1) | brute-force cosine | practices checking all of the chunks rather than only looking at ANN algorithms | alternative (and will be implemented down stream) would be ANN, more efficient |
-| Vector store (wk2) | Postgres + pgvector + FTS | | |
+| Vector store (wk2) | Postgres + pgvector + FTS | Quick and efficient to move across stores | |
 | Generator | Claude Haiku 4.5 | Strong, legacy model to implement, easy to use, lower cost than implementing Opus or a more expensive model especially since we just need a quick generator | |
+| Keyword retrieval (wk2) | FTS / BM25 | | |
+| Hybrid fusion (wk2) | RRF | | |
+| Metadata filter (wk2) | pre- or post-filter | | |
+| Faithfulness judge (wk2) | Claude Sonnet | | |
 
 ---
 
-# Phase 1 — Week 1: minimal end-to-end slice  *(CURRENT PHASE)*
+# Phase 1 — Week 1: minimal end-to-end slice  ✅ COMPLETE
 
 Goal of the week: a working `ingest → embed → retrieve → answer` pipeline on the corpus, dense-only, with a basic retrieval eval. Hybrid retrieval, the metadata filter, the faithfulness judge, and the UI are deliberately **not** in this phase.
 
@@ -123,7 +131,7 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 
 ---
 
-### Station 1 — Token chunker  📍 YOU ARE HERE
+### Station 1 — Token chunker  ✅ done
 
 **Objective:** turn raw filing sections into overlapping fixed-size token chunks that carry their source metadata.
 
@@ -301,9 +309,152 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 
 ---
 
-# Phase 2 — Week 2: hybrid retrieval + storage + eval harness  🔒 SEALED
+# Phase 2 — Week 2: hybrid retrieval + storage + eval harness  *(CURRENT PHASE)*
 
-Unlocks when Week 1 is complete. Preview only: move off brute-force into Postgres + pgvector; promote the chunk metadata to indexed SQL columns; add keyword retrieval (FTS) and fuse it with dense; and — the headline — add the **metadata filter** (`WHERE fiscal_year = … AND section = …`) that resolves the temporal confusability dense search can't. Then build the full evaluation harness, including the **faithfulness LLM-judge**. Detailed tasks and questions appear when you reach it.
+Goal of the week: move off brute-force into a real store, add the two things dense-only can't do — **exact keyword matching** and **metadata filtering** — fuse them, and **measure the improvement over your Week 1 baseline** (hit-rate@5 = 0.385, MRR@5 = 0.179). Then add the **faithfulness judge** so you're grading answers, not just retrieval.
+
+> The before/after retrieval table (dense → hybrid → hybrid+filter) is the single most valuable artifact in the whole project. The Postgres/pgvector *plumbing* is where to move fast; the fusion, the filter, and the **measurement** are where to slow down.
+
+**Why this station order (don't reorder):**
+```
+6 store     → 7 keyword  → 8 RRF fusion  → 9 metadata filter  → 10 judge + gold scale
+  ↑ plumbing    ↑ precious    ↑ precious       ↑ precious (headline)   ↑ precious
+```
+Station 6 is a **parity check** — same math, new container. Stations 7–8 add lexical signal. Station 9 is the temporal-disambiguation fix your eval already proved you need. Station 10 closes the loop on *answers*, not just passages.
+
+**Week 1 baseline (lock this in — do not re-baseline after changing the embedder or chunker):**
+
+| Metric | Week 1 dense-only | Target after hybrid+filter (you fill) |
+|---|---|---|
+| hit-rate@5 | **0.385** (5/13) | |
+| MRR@5 | **0.179** | |
+| Dominant failure | right topic, **wrong fiscal year** | |
+
+**Precious (you implement, Cursor coaches):** `retrieve/keyword.py`, `retrieve/hybrid.py` (fusion), the metadata-filter logic, `eval/judge.py` (faithfulness).
+**Plumbing (Cursor may write freely):** Postgres schema/DDL, pgvector + FTS index setup, DB connection/upsert, the migration script from your `.cache/` vectors.
+
+---
+
+### Station 6 — Postgres + pgvector store  📍 YOU ARE HERE
+
+**Objective:** persist chunks, metadata, and embeddings in Postgres; serve dense search from pgvector instead of the in-memory brute-force index.
+
+**Tasks:**
+1. Stand up Postgres locally (Docker is fine). Enable the `pgvector` extension (and FTS support for Station 7).
+2. Schema — one row per chunk: `id, company, fiscal_year, section, chunk_text, embedding vector(384)`. Add an ANN index on `embedding` and **btree indexes on `fiscal_year` and `section`** (you filter on these in Station 9).
+3. Write a load/migration script that reads your existing `.cache/` vectors + metadata and upserts them (plumbing — let Cursor write it).
+4. Repoint dense search at pgvector (`PgDenseIndex` or similar); confirm your Week 1 eval still runs and **reproduces ~0.385**.
+
+**Questions to answer:**
+1. You told the interviewer "pgvector, not Qdrant." Defend it concretely now: for a single company's filings, what does putting vectors *in Postgres next to the metadata* buy you that a dedicated vector DB makes harder? (This is your FDE "deploy on the infra they already run" story — say it precisely.)
+
+    a. Putting vectors in postgres, using pgvector, next to the metadata allows us to quickly have a structured, hybrid database. Although this would be slightly more challenging to scale horizontally than Qdrant, for the sake of this project where we don't have millions of files we can afford the tradeoff. Using pgvector also allows us to use different datasets in the future, not just a vector store.
+
+2. pgvector offers HNSW and IVFFlat. What does each trade (build time, query speed, recall, memory)? At your corpus size, does the choice even matter — and if not, what's the honest reason to pick one?
+
+    a. HNSW is a more modern, updated version of IVFFlat that offers a graph-based indexing approach to semantic search. It is much quicker than IVFFlat in terms of build time as it doens't require the entire database to load, instead building rows and columsn as data is uploaded. It's also much quicker when it comes to query speed versus IVFFlat as it uses a layered graph approach, zooming in to more detailed clusters; this trades a small bit of accuracy for much quicker query speeds. IVFFlat uses less memory than HNSW, and can be built quicker, but it's outclassed in every other metric by HNSW. At this corpus size, the choice doesn't really matter; however, the honest reason to pick HNSW is that it gives me much more practice with what is actually used in industry and if we want to scale the dataset it would make my life much easier down the line. 
+
+3. Moving stores shouldn't change your retrieval *numbers*. Why should brute-force → pgvector reproduce ~0.385, and what would it mean if it didn't?
+
+    a. It should reproduce 0.385 because it's functioning off of the same exact vectors and chunks that brute force was. If it produced a different value (and it did) that would mean that there was something wrong with moving the data across stores; this was acknowledged below. 
+
+**Definition of done:** pgvector serves dense search · Week 1 eval reproduces within noise · `fiscal_year`/`section` indexed · committed.
+
+**Notes & answers:**
+```
+Key note: when I went to run the initial eval, using the same embedded chunks as before, the evaluation metrics were off and significantly lower than the brute force method we were using before (they should have been identical since it's running off the same chunks just using a different search). Discovered that this was becuase Numpy uses list position, so all 692 chunks were distinct; however, when uploading these chunks to Postgres, the collisions overwrote each other as the chunk_index reset per section leading to the same filing producing both Item 1A and Item 7 chunkns with the same index (0, 1, 2, etc.). This led to only having 384 unique rows from 692 chunks with mismatched text/embeddings, leading to an accuracy of 0.231 vs. an original (expected) accuracy of 0.385. Fixed by changing ID format to {source}::{section}::{chunk_index} rather than just {source}:{chunk_index}.
+```
+
+---
+
+### Station 7 — Keyword retrieval (BM25 / FTS)
+
+**Objective:** add a lexical retriever that scores on exact tokens — the half of hybrid that dense can't do.
+
+**Tasks:**
+1. Add keyword search over `chunk_text` — Postgres FTS (`tsvector` + `ts_rank`) or in-process `rank-bm25`. Either is defensible; record which and why.
+2. Return the same shape as dense (chunk ids + scores) so fusion is clean next station.
+3. Sanity-check on a distinctive token: query `Copilot` or `Activision` and confirm keyword nails the right year where dense blurred it.
+
+**Questions to answer:**
+1. Your Week 1 failure was "right topic, wrong year." For which gold questions does keyword *directly* fix that (distinctive tokens: `COVID-19`, `Copilot`, a dollar figure) and for which is keyword useless (pure boilerplate with no distinctive token)? That split is the argument for why you need keyword **and** the metadata filter — not one or the other.
+2. What does BM25 reward that cosine ignores? Where does stemming/stopword handling help, and where could it hurt on filings (e.g. `Item 7A`, ticker-like tokens, four-digit years)?
+3. Why keep dense at all if keyword fixes the year cases — what breaks if you go keyword-only?
+
+**Definition of done:** keyword retriever returns ranked chunks · distinctive-token check passes · Design-log row filled · committed.
+
+**Notes & answers:**
+```
+(write here)
+```
+
+---
+
+### Station 8 — Hybrid fusion (RRF)  *(precious)*
+
+**Objective:** combine the dense and keyword rankings into one ordering.
+
+**Tasks:**
+1. Implement fusion in `retrieve/hybrid.py`. Start with Reciprocal Rank Fusion (RRF); optionally also try weighted score-blending so you can compare.
+2. Re-run retrieval eval; record hit-rate@k / MRR against the 0.385 baseline.
+
+**Questions to answer:**
+1. Dense scores are cosine (~0–1); BM25 scores are unbounded and corpus-dependent. Why does naively *adding* them break, and how does RRF sidestep the normalization problem entirely?
+2. RRF has a constant `k` (rank offset). What does it control, and what happens at very small vs very large `k`?
+3. Fusion should help confusable-*topic* recall — but predict whether it fixes the *wrong-year* problem on pure boilerplate, then check against your eval. (This is what tees up the metadata filter as the real fix.)
+
+**Definition of done:** hybrid retriever implemented · eval re-run and numbers recorded · committed.
+
+**Notes & answers:**
+```
+(write here)
+```
+
+---
+
+### Station 9 — Metadata filter + re-measure  *(precious — the headline)*
+
+**Objective:** apply `WHERE fiscal_year = … AND section = …` and quantify exactly what it buys.
+
+**Tasks:**
+1. Add the filter to the retrieval path (SQL `WHERE` on your indexed columns).
+2. Choose pre-filter (filter → rank) or post-filter (rank → drop); implement one and be ready to argue it.
+3. Re-run the full retrieval eval **with** the filter. Build the before/after table: **dense (0.385) → hybrid → hybrid + filter.** This table is your centerpiece — capture it cleanly.
+
+**Questions to answer:**
+1. Pre-filter vs post-filter: what does each cost in recall and query time, and why can post-filter silently under-return at a fixed top-k?
+2. Where do the filter values (`fiscal_year`, `section`) come from at query time? Right now you hand them in from the gold item — but for a real query like "what did they say about X in 2023?", *what component extracts them?* Name the gap. (You close it with the agent in Phase 4 — this is the seam between Week 2 and your agent work.)
+3. On which gold questions does the filter help most, and on which does it do nothing? Tie the answer back to your confusable-cluster analysis (boilerplate vs. distinctive-token questions).
+
+**Definition of done:** filter implemented · before/after table recorded (dense → hybrid → hybrid+filter) · per-question explanation of where it helped and where it didn't · committed.
+
+**Notes & answers:**
+```
+(write here)
+```
+
+---
+
+### Station 10 — Faithfulness judge + scale gold  *(precious)*
+
+**Objective:** evaluate *answers*, not just retrieval; grow the gold set to ~25.
+
+**Tasks:**
+1. Grow gold to ~25. Deliberately add: at least one **absence** case (ask about a topic in a year before it existed — correct answer is "not disclosed"; e.g. Copilot in FY2019). Keep comparison questions honest — only include them if the *single* filing's MD&A actually states the year-over-year line; true cross-*filing* comparisons belong to the Phase 4 agent's `compare_passages` tool. Also make your relevance rule explicit in the harness ("a hit = retrieved chunk whose `fiscal_year`+`section` match gold"), since `match_text` alone doesn't pin boilerplate.
+2. Implement `eval/judge.py`: Claude Sonnet scores whether the generated answer is grounded in the retrieved context (faithful/unfaithful + reason). *(Confirm the current Sonnet model string + SDK call with the chat before wiring it — don't let it go stale.)*
+3. Run retrieval + faithfulness end-to-end; record both.
+
+**Questions to answer:**
+1. What does faithfulness catch that hit-rate@k cannot (e.g. right passage retrieved, answer still invents a number)? And the reverse — what does retrieval catch that the judge can't?
+2. Your judge is an LLM grading an LLM. Name its failure modes (self-preference, length/verbosity bias, being swayed by a confident-but-wrong answer) and one concrete guard for each.
+3. Why judge *faithfulness to retrieved context* rather than *correctness against the filing*? What does that choice let you evaluate honestly without being a finance expert — and what does it deliberately **not** measure?
+
+**Definition of done:** gold ~25 incl. an absence case · relevance rule explicit in harness · faithfulness judge runs and is spot-checked against your own reading · retrieval + faithfulness numbers recorded · Design-log rows filled · committed. **→ Week 2 complete; ask the chat to unlock Phase 3.**
+
+**Notes & answers:**
+```
+(write here)
+```
 
 # Phase 3 — Week 3: polish, cost/latency, UI  🔒 SEALED
 
@@ -429,3 +580,5 @@ make ask                 # query end-to-end
 
 - *(date)* — Scaffolded repo + tooling; locked stack. Active: Station 1 (chunker).
 - *(date)* — Pivoted corpus: JDM / cognitive biases → **one company's SEC 10-K filings across fiscal years** (internal-document-assistant archetype; SEC as public proxy for a private corpus). Eval model set to **retrieval-gold + faithfulness**. Confusability axis is now temporal (same section, adjacent years). Chunker work (Station 1) carries over unchanged; ingestion gains section/metadata parsing; Station 5 reframed to retrieval gold.
+- *(date)* — Added Phase 4 (API + explicit agent loop + one legacy hook) and Phase 5 (production slice) previews; corpus locked to **Microsoft 10-Ks, FY2019–FY2025** (fiscal year ends June 30 — phrase/label everything by fiscal year).
+- **2026-07-03 — Week 1 (Phase 1) COMPLETE.** End-to-end dense pipeline runs: ingest → chunk (+metadata) → embed → brute-force cosine → Haiku generation → retrieval eval. Gold set authored (13 items → `data/qa/gold.jsonl`). Baseline: **hit-rate@5 = 0.385, MRR@5 = 0.179**; dominant failure = *right topic, wrong fiscal year* — the exact temporal confusion the Week 2 metadata filter is built to fix. Phase 2 unlocked (Stations 6–10). Active: Station 6 (Postgres + pgvector).
