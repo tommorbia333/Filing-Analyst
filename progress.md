@@ -114,7 +114,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Vector store (wk2) | Postgres + pgvector + FTS | Quick and efficient to move across stores | |
 | Generator | Claude Haiku 4.5 | Strong, legacy model to implement, easy to use, lower cost than implementing Opus or a more expensive model especially since we just need a quick generator | |
 | Keyword retrieval (wk2) | FTS / BM25 | Chose BM25 because it's more up-to-date with current standards and I want more practice with BM25 and how it works/algorithm practice and I want less SQL if possible. I also think that the IDF characteristic would be really useful for this kind of corpus since there are certain words that appear a bit more consistently across the years and others that are a bit rarer; this would hypothetically help with the year problem and also finding important sections for a given noun or proper noun | Considered FTS because it's one store, easier to implement and more of a 'implement over existing infrastructure' type of practice |
-| Hybrid fusion (wk2) | RRF | | |
+| Hybrid fusion (wk2) | RRF | Fuses together BM25 and dense into a hybrid search eval. Note: hit_rate@5 is 0.385 after hybrid, 0.385 at baseline. MRR@5 is 0.172 at hybrid, 0.179 at dense. Have not implented filter yet; that is the next step | |
 | Metadata filter (wk2) | pre- or post-filter | | |
 | Faithfulness judge (wk2) | Claude Sonnet | | |
 
@@ -408,8 +408,16 @@ When running an initial test using BM25 on the gold standard, I noticed the foll
 
 **Questions to answer:**
 1. Dense scores are cosine (~0–1); BM25 scores are unbounded and corpus-dependent. Why does naively *adding* them break, and how does RRF sidestep the normalization problem entirely?
+
+    a. Naively adding them breaks because they aren't on the same scale, which can bias towards one or the other. RRF sidesteps the normalization problem by focusing on positional agreement instead. 
+
 2. RRF has a constant `k` (rank offset). What does it control, and what happens at very small vs very large `k`?
+
+    a. 'k' acts as a dampener, representing a point of diminishing return where documents that are ranked highly in multiple results lists rise to the top of the combined output. However, 'k' also acts as a balancer so that the top documents don't completely dominate the list. A small 'k' puts a massive weight on the top result, with the gap being enormous between the top and second top result. This can be a problem if that result is wrong or not relevant for the context as it gets forced into the output regardless. A large 'k' makes it so that the difference in rank between the number 1 and number x result is very small, so both are treated similarly. This turns the ranker into more of a 'voter', showing whatever appears the most in the document rather than what is ranked the most relevant or closest. 
+
 3. Fusion should help confusable-*topic* recall — but predict whether it fixes the *wrong-year* problem on pure boilerplate, then check against your eval. (This is what tees up the metadata filter as the real fix.)
+
+    a. It doesn't help fix the wrong-year problem on pure boilerplate. The eval numbers look like the following: dense (hit-rate@5: 0.385, MRR@5: 0.179) and hybrid RRF no filter (hit-rate@5: 0.385, MRR@5: 0.172). 
 
 **Definition of done:** hybrid retriever implemented · eval re-run and numbers recorded · committed.
 
