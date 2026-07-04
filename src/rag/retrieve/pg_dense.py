@@ -32,18 +32,31 @@ class PgDenseIndex:
     def from_dsn(cls, dsn: str) -> PgDenseIndex:
         return cls(connect(dsn))
 
-    def search(self, query_vec: np.ndarray, k: int) -> list[tuple[float, Chunk]]:
+    def search(self, query_vec: np.ndarray, k: int, fiscal_year: int | None = None,
+           section: str | None = None) -> list[tuple[float, Chunk]]:
         query_vec = query_vec.reshape(-1)
 
-        sql = """
-            SELECT id, company, fiscal_year, section, chunk_text,
-                1 - (embedding <=> %s::vector) AS score
-            FROM chunks
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-        """
+        if fiscal_year is not None and section is not None:
+            sql = """
+                SELECT id, company, fiscal_year, section, chunk_text, 1 - (embedding <=> %s::vector) AS score
+                FROM chunks
+                WHERE fiscal_year = %s AND section = %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+            """
+            # score uses query_vec too — include it first:
+            params = (query_vec, fiscal_year, section, query_vec, k)
+        else:
+            sql = """
+                SELECT id, company, fiscal_year, section, chunk_text, 1 - (embedding <=> %s::vector) AS score
+                FROM chunks
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+            """
+            params = (query_vec, query_vec, k)
+
         with self.conn.cursor() as cur:
-            cur.execute(sql, (query_vec, query_vec, k))
+            cur.execute(sql, params)
             rows = cur.fetchall()
 
         return [(float(row[-1]), row_to_chunk(row[:-1])) for row in rows]

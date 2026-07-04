@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import pickle
+import re
 from pathlib import Path
 
 import numpy as np
@@ -27,13 +28,27 @@ def load_gold(path: Path) -> list[dict]:
     return items
 
 
+def _normalize(text: str) -> str:
+    """Lowercase and collapse hyphen/dash spacing (covid - 19 ↔ covid-19)."""
+    text = text.lower()
+    text = re.sub(r"[\u2010-\u2015]", "-", text)  # unicode dashes → ASCII
+    text = re.sub(r"\s*-\s*", "-", text)
+    return text
+
+
 def is_relevant(chunk: Chunk, gold: dict) -> bool:
+    """Relevance: fiscal_year + section must match.
+
+    Optional gold match_text pins a distinctive token within that section
+    (e.g. Copilot, COVID-19). Omit it for boilerplate questions — year+section
+    already disambiguates, and a brittle needle only creates false misses.
+    """
     if chunk.fiscal_year != gold["fiscal_year"]:
         return False
     if chunk.section != gold["section"]:
         return False
     needle = gold.get("match_text")
-    if needle and needle.lower() not in chunk.text.lower():
+    if needle and _normalize(needle) not in _normalize(chunk.text):
         return False
     return True
 

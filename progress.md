@@ -94,9 +94,9 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Wk1 | 5 · Basic evaluation (retrieval gold) | ✅ done — hit@5 0.385 / MRR@5 0.179 |
 | Wk2 | 6 · Postgres + pgvector store | ✅ done — hit@5 0.385 / MRR@5 0.179 |
 | Wk2 | 7 · Keyword retrieval (BM25/FTS) | ✅ done |
-| Wk2 | 8 · Hybrid fusion (RRF) | 📍 **active** |
-| Wk2 | 9 · Metadata filter + re-measure | ⬜ |
-| Wk2 | 10 · Faithfulness judge + scale gold | ⬜ |
+| Wk2 | 8 · Hybrid fusion (RRF) | ✅ done — hit@5 0.385 / MRR@5 0.172 |
+| Wk2 | 9 · Metadata filter + re-measure | ✅ done — hit@5 1.000 / MRR@5 1.000 (filtered) |
+| Wk2 | 10 · Faithfulness judge + scale gold | 📍 **active** |
 | Wk3 | Polish, cost/latency, UI | 🔒 sealed |
 | Phase 4 | API + agent loop + one legacy hook | 🔒 sealed |
 | Phase 5 | Production slice + second integration | 🔒 sealed |
@@ -398,7 +398,7 @@ When running an initial test using BM25 on the gold standard, I noticed the foll
 
 ---
 
-### Station 8 — Hybrid fusion (RRF)  *(precious)*  📍 YOU ARE HERE
+### Station 8 — Hybrid fusion (RRF)  *(precious)*  ✅ done
 
 **Objective:** combine the dense and keyword rankings into one ordering.
 
@@ -428,7 +428,7 @@ When running an initial test using BM25 on the gold standard, I noticed the foll
 
 ---
 
-### Station 9 — Metadata filter + re-measure  *(precious — the headline)*
+### Station 9 — Metadata filter + re-measure  *(precious — the headline)*  ✅ done
 
 **Objective:** apply `WHERE fiscal_year = … AND section = …` and quantify exactly what it buys.
 
@@ -439,19 +439,41 @@ When running an initial test using BM25 on the gold standard, I noticed the foll
 
 **Questions to answer:**
 1. Pre-filter vs post-filter: what does each cost in recall and query time, and why can post-filter silently under-return at a fixed top-k?
+
+    a. Pre-filter costs a lot if the filter is broad but little if it is more specific, as a broad filter can return many results that need to be sifted through. Post-filter is typically a bit more predictable given the size of a dataset as it always itirates over the entire set. Post-filter can silently under-return at a fixed top-k because it can select a given number of top-k chunks before applying the filtering, apply the filter and reduce the top-k to a small number, and then return those without letting you know of the other ones that it cut and therefore returning a much smaller number of chunks than pre-filtering. For this corpus, pre-filtering makes the most sense since there are inherent limitations to the data with repeated years and information; having a pre-filter ensures that we immediately reduce near-duplicate data to the specific years/terms that we need. 
+
 2. Where do the filter values (`fiscal_year`, `section`) come from at query time? Right now you hand them in from the gold item — but for a real query like "what did they say about X in 2023?", *what component extracts them?* Name the gap. (You close it with the agent in Phase 4 — this is the seam between Week 2 and your agent work.)
+
+    a. Filter values come from the gold standard items right now, but at query time they would come from the prompt that the user inputs. There would be some kind of a query understanding step, there would be 'something' that extracts the necessary components to pass through as the filter values. This will likely take the form of an LLM choosing tool args, or some other agent; this could also take the form of a regex, however. 
+
 3. On which gold questions does the filter help most, and on which does it do nothing? Tie the answer back to your confusable-cluster analysis (boilerplate vs. distinctive-token questions).
+
+    a. The filter helps most on the boilerplate questions. It didn't do much on the 'highlights' problem since it's just way too vague. 
 
 **Definition of done:** filter implemented · before/after table recorded (dense → hybrid → hybrid+filter) · per-question explanation of where it helped and where it didn't · committed.
 
 **Notes & answers:**
 ```
-(write here)
+Config	hit-rate@5	MRR@5
+dense:
+0.385
+0.179
+hybrid RRF, no filter:
+0.385
+0.172
+hybrid RRF + metadata filter:
+0.846
+0.769
+hybrid RRF + metadata filter + normalization/changing is_relevant:
+1.000
+
+Implemented another change for COVID-19 since it still wasn't getting picked up in is_relevant because of the match_text function (retrieval is fine though). I decided to drop match_text when year+section already pin a topic as a filter; this is also good for when people might mispell their queries or use caps/spaces inconsistently; should generalize more. Also normalized is_relevant so that it collapses hyphen/space variants on both sides, treating covid-19 and covid - 19 as the same. After the change, hit-rate@5 is 1.000. 
+
 ```
 
 ---
 
-### Station 10 — Faithfulness judge + scale gold  *(precious)*
+### Station 10 — Faithfulness judge + scale gold  *(precious)*  📍 YOU ARE HERE
 
 **Objective:** evaluate *answers*, not just retrieval; grow the gold set to ~25.
 

@@ -32,7 +32,8 @@ class KeywordIndex:
     def from_cache(cls, chunks: list[Chunk]) -> KeywordIndex:
         return cls(chunks)
 
-    def search(self, query: str, k: int) -> list[tuple[float, Chunk]]:
+    def search(self, query: str, k: int, fiscal_year: int | None = None,
+           section: str | None = None) -> list[tuple[float, Chunk]]:
         """Return top-k (score, Chunk) pairs by BM25 rank.
 
         Hints:
@@ -45,7 +46,13 @@ class KeywordIndex:
             (pick one and be ready to defend it)
         """
         tokenized_query = _tokenize(query)
-        scores = self.bm25.get_scores(tokenized_query)
-        top_k_indices = np.argsort(scores)[::-1][:k]
+        scores = self.bm25.get_scores(tokenized_query)  # one score per chunk
 
+        # PRE-FILTER: if fiscal_year / section given, kill non-matching scores
+        if fiscal_year is not None and section is not None:
+            for i, chunk in enumerate(self.chunks):
+                if chunk.fiscal_year != fiscal_year or chunk.section != section:
+                    scores[i] = -1.0   # or -np.inf — anything below real BM25 scores
+
+        top_k_indices = np.argsort(scores)[::-1][:k]
         return [(float(scores[i]), self.chunks[i]) for i in top_k_indices]

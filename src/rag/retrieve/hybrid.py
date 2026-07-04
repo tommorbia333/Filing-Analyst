@@ -42,8 +42,11 @@ class HybridIndex:
         self.keyword = keyword
         self.k_rrf = k_rrf
 
-    def search(self, query: str, query_vec: np.ndarray, k: int) -> list[tuple[float, Chunk]]:
-        """Run dense + keyword, fuse with RRF, return top-k."""
-        dense_results = self.dense.search(query_vec, 2 * k)
-        keyword_results = self.keyword.search(query, 2 * k)
+    def search(self, query, query_vec, k, fiscal_year=None, section=None):
+        dense_results = self.dense.search(
+            query_vec, 2 * k, fiscal_year=fiscal_year, section=section
+        )
+        keyword_results = self.keyword.search(
+            query, 2 * k, fiscal_year=fiscal_year, section=section
+        )
         return rrf([dense_results, keyword_results], self.k_rrf)[:k]
