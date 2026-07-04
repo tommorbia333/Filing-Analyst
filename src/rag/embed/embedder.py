@@ -1,12 +1,13 @@
 """Local embeddings via sentence-transformers, cached to disk.
 
-Two subtleties worth knowing (ask me about either):
-  * bge-* models want a query INSTRUCTION prepended to queries (not passages).
-  * We L2-normalize, so cosine similarity == dot product (cheaper at search time).
+bge-* models prepend a query instruction to queries (not passages).
+Vectors are L2-normalized so cosine similarity equals a dot product.
 """
 from __future__ import annotations
+
 import hashlib
 from pathlib import Path
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 

@@ -1,7 +1,4 @@
-"""Dense retrieval via pgvector. Week 2 Station 6.
-
-YOUR TASK: implement search().
-"""
+"""Dense retrieval via pgvector."""
 from __future__ import annotations
 
 import numpy as np
@@ -12,7 +9,7 @@ from rag.store.db import connect
 
 
 def row_to_chunk(row: tuple) -> Chunk:
-    """Map a DB row to Chunk. Eval only needs fiscal_year, section, text — rest can be placeholders."""
+    """Map a DB row to Chunk."""
     _id, company, fiscal_year, section, chunk_text = row[:5]
     source, _section, chunk_index_str = _id.split("::", 2)
     return Chunk(
@@ -49,5 +46,4 @@ class PgDenseIndex:
             cur.execute(sql, (query_vec, query_vec, k))
             rows = cur.fetchall()
 
-        # BLANK: build [(float(score), row_to_chunk(row_without_score)), ...]
         return [(float(row[-1]), row_to_chunk(row[:-1])) for row in rows]

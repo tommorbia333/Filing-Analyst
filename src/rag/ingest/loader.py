@@ -5,7 +5,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-# JSON keys in EXTRACTED_FILINGS → human-readable section labels for metadata / filters.
 SECTIONS: dict[str, str] = {
     "item_1A": "Item 1A",
     "item_7": "Item 7",
@@ -18,7 +17,7 @@ class Document:
     company: str
     fiscal_year: int
     section: str
-    source: str  # filing filename, e.g. 789019_10K_2024_....json
+    source: str
 
 
 def _fiscal_year(period_of_report: str) -> int:

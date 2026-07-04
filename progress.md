@@ -92,9 +92,9 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Wk1 | 3 · Dense retrieval (brute force) | ✅ done |
 | Wk1 | 4 · Generation + rate limiting | ✅ done |
 | Wk1 | 5 · Basic evaluation (retrieval gold) | ✅ done — hit@5 0.385 / MRR@5 0.179 |
-| Wk2 | 6 · Postgres + pgvector store | 📍 **active** |
-| Wk2 | 7 · Keyword retrieval (BM25/FTS) | ⬜ |
-| Wk2 | 8 · Hybrid fusion (RRF) | ⬜ |
+| Wk2 | 6 · Postgres + pgvector store | ✅ done — hit@5 0.385 / MRR@5 0.179 |
+| Wk2 | 7 · Keyword retrieval (BM25/FTS) | ✅ done |
+| Wk2 | 8 · Hybrid fusion (RRF) | 📍 **active** |
 | Wk2 | 9 · Metadata filter + re-measure | ⬜ |
 | Wk2 | 10 · Faithfulness judge + scale gold | ⬜ |
 | Wk3 | Polish, cost/latency, UI | 🔒 sealed |
@@ -103,7 +103,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 
 ---
 
-## Design decisions log  *(you fill the last two columns)*
+## Design decisions log
 
 | Component | Choice | Why (your words) | Alternatives you considered |
 |---|---|---|---|
@@ -113,7 +113,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Retrieval (wk1) | brute-force cosine | practices checking all of the chunks rather than only looking at ANN algorithms | alternative (and will be implemented down stream) would be ANN, more efficient |
 | Vector store (wk2) | Postgres + pgvector + FTS | Quick and efficient to move across stores | |
 | Generator | Claude Haiku 4.5 | Strong, legacy model to implement, easy to use, lower cost than implementing Opus or a more expensive model especially since we just need a quick generator | |
-| Keyword retrieval (wk2) | FTS / BM25 | | |
+| Keyword retrieval (wk2) | FTS / BM25 | Chose BM25 because it's more up-to-date with current standards and I want more practice with BM25 and how it works/algorithm practice and I want less SQL if possible. I also think that the IDF characteristic would be really useful for this kind of corpus since there are certain words that appear a bit more consistently across the years and others that are a bit rarer; this would hypothetically help with the year problem and also finding important sections for a given noun or proper noun | Considered FTS because it's one store, easier to implement and more of a 'implement over existing infrastructure' type of practice |
 | Hybrid fusion (wk2) | RRF | | |
 | Metadata filter (wk2) | pre- or post-filter | | |
 | Faithfulness judge (wk2) | Claude Sonnet | | |
@@ -335,7 +335,7 @@ Station 6 is a **parity check** — same math, new container. Stations 7–8 add
 
 ---
 
-### Station 6 — Postgres + pgvector store  📍 YOU ARE HERE
+### Station 6 — Postgres + pgvector store  ✅ done
 
 **Objective:** persist chunks, metadata, and embeddings in Postgres; serve dense search from pgvector instead of the in-memory brute-force index.
 
@@ -367,7 +367,7 @@ Key note: when I went to run the initial eval, using the same embedded chunks as
 
 ---
 
-### Station 7 — Keyword retrieval (BM25 / FTS)
+### Station 7 — Keyword retrieval (BM25 / FTS)  ✅ done
 
 **Objective:** add a lexical retriever that scores on exact tokens — the half of hybrid that dense can't do.
 
@@ -378,19 +378,27 @@ Key note: when I went to run the initial eval, using the same embedded chunks as
 
 **Questions to answer:**
 1. Your Week 1 failure was "right topic, wrong year." For which gold questions does keyword *directly* fix that (distinctive tokens: `COVID-19`, `Copilot`, a dollar figure) and for which is keyword useless (pure boilerplate with no distinctive token)? That split is the argument for why you need keyword **and** the metadata filter — not one or the other.
+
+    a. Keyword directly fixes that for distinctive tokens like COVID-19 and Copilot, but not for more 'mushy' words that consistently reappear across the corpus like 'economic conditions'. 
+
 2. What does BM25 reward that cosine ignores? Where does stemming/stopword handling help, and where could it hurt on filings (e.g. `Item 7A`, ticker-like tokens, four-digit years)?
+
+    a. BM25 rewards term frequency saturation and document length normalization. Term frequency saturation in particular is useful here as it helps get rid of terms that appear more and are thus not as important to finding the best chunk/context. Stemming/stopword handling helps with the speed at which we can scan chunks and gets rid of unnecessary noise. This could hurt on filings when we need to generate more context, as it can cut off some necessary information. (this isn't 100% correct - when bringing this into the README.md make a bit of changes)
+
 3. Why keep dense at all if keyword fixes the year cases — what breaks if you go keyword-only?
+
+    a. We keep dense to understand the relative information around the found chunk. This allows us to semantic search even when the query doesn't share tokens with the passage, telling us deeper meanings in a text/query even if the exact keywords don't match. Keyword-only fails on this paraphrase, and dense-only fails on exact rare tokens like year. Using both together is the best bet.
 
 **Definition of done:** keyword retriever returns ranked chunks · distinctive-token check passes · Design-log row filled · committed.
 
 **Notes & answers:**
 ```
-(write here)
+When running an initial test using BM25 on the gold standard, I noticed the following things: keywords Copilot and GitHub had higher scores and were present in the retrieved chunks, with the higher ranking chunk for Github being 2019 (the year it was acquired by Microsoft) which is great. The more convoluted terms like "economic conditions" were way more mushy since they are terms that appear across all of the years consistently. This is a mistake on my end with creating the gold standard, not with the implementation of BM25. One thing in particular to note is how COVID-19 returned a score of all zeros: this is because the text was stored as covid - 19, with spaces around the hyphen which commonly happens after HTML/extract decode. This is a tokenization problem rather than a search problem: to fix it, we made _tokenize splie on non-alphanumerics so both "covid-19" and "covid - 19" become ["covid", "19"]. After the fix, COVID-19 returned very high scores and consistent years across 2020-2022, reflecting the peak years of the COVID-19 pandemic. 
 ```
 
 ---
 
-### Station 8 — Hybrid fusion (RRF)  *(precious)*
+### Station 8 — Hybrid fusion (RRF)  *(precious)*  📍 YOU ARE HERE
 
 **Objective:** combine the dense and keyword rankings into one ordering.
 
@@ -571,7 +579,7 @@ Likely themes (pick a subset when unlocked — not all at once):
 ```bash
 make install            # uv venv + editable install (.[dev])
 cp .env.example .env     # add ANTHROPIC_API_KEY
-make test                # run tests (red until you implement the stubs)
+make test                # run tests
 make index               # ingest -> chunk -> embed -> persist
 make ask                 # query end-to-end
 ```

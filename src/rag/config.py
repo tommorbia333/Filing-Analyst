@@ -1,8 +1,10 @@
-"""Central config. Keep magic numbers here so the README can cite exact settings."""
+"""Central config."""
 from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,13 +17,13 @@ class Settings:
     qa_path: Path = ROOT / "data" / "qa" / "gold.jsonl"
     cache_dir: Path = ROOT / ".cache"
 
-    embed_model: str = "BAAI/bge-small-en-v1.5"  # 384-dim, ~512-token window
-    chunk_size: int = 256    # tokens; must stay under the embedder's 512 window
-    chunk_overlap: int = 32  # tokens
+    embed_model: str = "BAAI/bge-small-en-v1.5"
+    chunk_size: int = 256
+    chunk_overlap: int = 32
 
     top_k: int = 5
 
-    gen_model: str = "claude-haiku-4-5"    # verify exact string when we wire the SDK
+    gen_model: str = "claude-haiku-4-5"
     judge_model: str = "claude-sonnet-4-6"
 
     @property

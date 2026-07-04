@@ -1,10 +1,11 @@
-"""Target spec for chunk_document. Run: uv run pytest -q (red until you implement it)."""
+"""Tests for chunk_document."""
 import pytest
 from transformers import AutoTokenizer
+
 from rag.ingest.chunker import chunk_document
 
 TOK = AutoTokenizer.from_pretrained("BAAI/bge-small-en-v1.5")
-TEXT = " ".join(f"word{i}" for i in range(400))  # ~hundreds of tokens
+TEXT = " ".join(f"word{i}" for i in range(400))
 
 
 _META = {"company": "TEST", "fiscal_year": 2024, "section": "Item 1A"}
@@ -25,7 +26,6 @@ def test_no_chunk_exceeds_size():
 
 def test_chunks_overlap():
     cs = _chunks(size=100, overlap=20)
-    # consecutive chunks should share ~`overlap` tokens at the seam
     a = TOK.encode(cs[0].text, add_special_tokens=False)
     b = TOK.encode(cs[1].text, add_special_tokens=False)
     assert a[-20:] == b[:20]
@@ -34,7 +34,7 @@ def test_chunks_overlap():
 def test_full_coverage():
     cs = _chunks(size=100, overlap=20)
     assert cs[0].start_token == 0
-    assert cs[-1].end_token >= 390  # reached the end of the document
+    assert cs[-1].end_token >= 390
 
 
 def test_overlap_must_be_smaller_than_size():

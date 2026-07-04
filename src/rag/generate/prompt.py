@@ -1,5 +1,6 @@
-"""Assemble the RAG prompt. Grounding rules live here, not in the model call."""
+"""Assemble the RAG prompt."""
 from __future__ import annotations
+
 from rag.ingest.chunker import Chunk
 
 SYSTEM = (

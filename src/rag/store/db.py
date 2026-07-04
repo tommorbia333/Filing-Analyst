@@ -23,7 +23,7 @@ def connect(dsn: str | None = None) -> psycopg.Connection:
 
 
 def init_schema(dsn: str | None = None) -> None:
-    """Run schema.sql. Connects without register_vector — extension must exist first."""
+    """Run schema.sql (no register_vector — extension must exist first)."""
     sql = SCHEMA_PATH.read_text(encoding="utf-8")
     with psycopg.connect(_dsn(dsn)) as conn:
         conn.execute(sql)

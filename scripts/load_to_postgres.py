@@ -11,7 +11,6 @@ from rag.store.db import connect, init_schema
 
 
 def chunk_id(chunk: Chunk) -> str:
-    # source alone is the filing file; chunk_index resets per section — include section.
     return f"{chunk.source}::{chunk.section}::{chunk.chunk_index}"
 
 
