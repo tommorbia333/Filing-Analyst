@@ -12,7 +12,7 @@ The overview below covers the current state, complete through the Week 2 evaluat
 - **Problem:** the same boilerplate recurs across years, so dense retrieval often finds the right *topic* from the wrong *fiscal year*
 - **Approach:** hybrid retrieval (dense + BM25, fused with RRF) plus a `fiscal_year` / `section` metadata pre-filter over Postgres + pgvector
 - **Eval:** hand-authored gold set with year-aware relevance; retrieval scored with hit-rate@k and MRR; answer quality scored separately with an LLM faithfulness judge (grounding, not finance-expert correctness)
-- **Status:** Week 1 complete; Week 2 Stations 6-9 complete; Station 10 (faithfulness judge + scale gold) nearly done (judge wired, gold at 14/~25)
+- **Status:** faithfulness judge + scale gold nearly done (judge wired, gold at 14/25)
 
 ## Design decisions
 
@@ -40,9 +40,9 @@ The overview below covers the current state, complete through the Week 2 evaluat
 | **Hybrid RRF + metadata filter** | **0.846** | **0.769** |
 | + eval-harness relevance-rule fix | 1.000 | n/a |
 
-The headline is the third row. The metadata pre-filter is what actually fixed retrieval, taking hit-rate@5 from 0.385 to 0.846. RRF on its own did nothing for the wrong-year problem (0.385 to 0.385): fusing dense and keyword helps confusable *topics*, but boilerplate that repeats almost verbatim across years needs the `fiscal_year`/`section` filter, not better ranking. The dominant Week 1 failure was right topic, wrong fiscal year, and the filter is the thing that fixes it.
+The third row shows the main difference between the final design and the build up to it. The metadata pre-filter is what actually fixed retrieval, taking hit-rate@5 from 0.385 to 0.846. RRF on its own did nothing for the wrong-year problem (0.385 to 0.385), since fusing dense and keyword helps confusable *topics*, but boilerplate that repeats almost verbatim across years needs the `fiscal_year`/`section` filter, not better ranking. The dominant Week 1 failure was right topic, wrong fiscal year, and the filter is the thing that fixes it.
 
-The last row (0.846 to 1.000) is a different kind of fix, and I'll be upfront about it: that wasn't the retriever getting better, it was my eval harness getting less wrong. COVID-19 was stored as `covid - 19` (spaces around the hyphen, an HTML-extraction artifact), so my `is_relevant` check kept failing to match chunks the retriever had already surfaced correctly. Once I normalized hyphen and space variants on both sides and stopped requiring `match_text` where `fiscal_year`+`section` already pin the answer, the last few gold items scored as the hits they always were. So read 0.846 as the retrieval result and 1.000 as the measurement finally agreeing with it.
+The last row (0.846 to 1.000) is a different kind of fix rather than the retriever itself getting better. I was using a text that looked for COVID-19, but the HTML-extraction through edgar had stored it instead as 'covid - 19' so the text didn't directly match. Therefore, myy `is_relevant` check kept failing to match chunks the retriever had already surfaced correctly. Once I normalized hyphen and space variants on both sides and stopped requiring `match_text` where `fiscal_year`+`section` already pin the answer, the last few gold items scored as the hits they always were. So read 0.846 as the retrieval result and 1.000 as the measurement finally agreeing with it.
 
 ## Architecture
 
@@ -59,15 +59,15 @@ The last row (0.846 to 1.000) is a different kind of fix, and I'll be upfront ab
 
 ## Evaluation
 
-Retrieval is scored against a hand-authored gold set with year-aware relevance: a textually perfect chunk from the wrong year does not count as a hit, because that's the failure the whole project is about. Answer quality is scored separately by an LLM-as-judge for faithfulness to the retrieved context (is the answer grounded in what was actually retrieved), not correctness against the real filing. Separating the two matters: retrieval catches whether the right passage surfaced, faithfulness catches whether the answer stayed grounded or invented a number the passage never gave.
+Retrieval is scored against a hand-authored gold set with year-aware relevance, a textually perfect chunk from the wrong year does not count as a hit. Answer quality is scored separately by an LLM-as-judge for faithfulness to the retrieved context (is the answer grounded in what was actually retrieved) rather than correctness. Separating the two matters as the retrieval catches whether the right passage surfaced while faithfulness catches whether the answer stayed grounded or invented a number the passage never gave.
 
-The gold set also includes an absence case: asking about Copilot in FY2019, before it existed, where the correct answer is "not disclosed." It's a deliberate check that the system says nothing rather than fabricating content that isn't in the filing.
+The gold set also includes an absence case, asking about Copilot in FY2019, before it existed, where the correct answer is "not disclosed." It's a deliberate check that the system says nothing rather than fabricating content that isn't in the filing.
 
 ## Future direction: Phase 4, a live service with an explicit agent loop
 
-Right now the retrieval filter values (`fiscal_year`, `section`) are handed in from the gold item. A real user doesn't do that. They just ask *"what did Microsoft say about supply-chain risk in 2023?"* and something has to turn that sentence into filter arguments. That's the seam between what I've built and where it's going: a query-understanding step that extracts the filter args before retrieval runs.
+Right now the retrieval filter values (`fiscal_year`, `section`) are handed in from the gold item; a real user doesn't do that. They just ask *"what did Microsoft say about supply-chain risk in 2023?"* and something has to turn that sentence into filter arguments. That's the plan for the next phase of the project, where I plan to build a query-understanding step that extracts the filter args before retrieval runs.
 
-I'm closing that gap with a single explicit agent loop, not a multi-agent framework, and that's deliberate. The whole point of this project is that every component is defensible line by line, and reaching for LangGraph or CrewAI would throw that away. The loop is a plain Python state machine you can whiteboard:
+I plan on doing this with a single explicit agent loop:
 
 ```
 plan     → extract fiscal_year / section / topic from the natural-language question
@@ -79,7 +79,7 @@ check    → the Sonnet faithfulness judge verifies grounding
 
 The generator and the judge are already a producer-critic pair, so Phase 4 just closes the loop between them. On top of that, a small tool registry (`search_filings(query, fiscal_year?, section?)`, `list_available_years()`, `compare_passages(year_a, year_b, topic)`) gives the loop real multi-step jobs: a true cross-*filing* comparison needs two retrievals and a synthesis, which is where an agent earns its keep over a single retrieve-then-generate call.
 
-The rest of Phase 4 is a thin FastAPI wrapper (`POST /query` and `POST /agent/query`, the latter returning the answer plus a trace of which tools fired in what order) and one legacy-integration story: an ingest webhook or a mock ERP metadata adapter, built behind a small interface so the system depends on the interface, not the mock. That's the "deploy on the infrastructure a client already runs" story in miniature.
+The rest of Phase 4 is a thin FastAPI wrapper (`POST /query` and `POST /agent/query`, the latter returning the answer plus a trace of which tools fired in what order) and one legacy-integration story with an ingest webhook or a mock ERP metadata adapter, built behind a small interface so the system depends on the interface, not the mock. 
 
 **Phase 5 (later):** async re-indexing when new filings arrive, auth/tenancy, cost and p95-latency instrumentation off the Phase 4 query logs, and a second adapter to show the integration pattern generalizes rather than being one-off.
 
