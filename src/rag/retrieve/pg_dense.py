@@ -38,17 +38,18 @@ class PgDenseIndex:
 
         if fiscal_year is not None and section is not None:
             sql = """
-                SELECT id, company, fiscal_year, section, chunk_text, 1 - (embedding <=> %s::vector) AS score
+                SELECT id, company, fiscal_year, section, chunk_text,
+                    1 - (embedding <=> %s::vector) AS score
                 FROM chunks
                 WHERE fiscal_year = %s AND section = %s
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
             """
-            # score uses query_vec too — include it first:
             params = (query_vec, fiscal_year, section, query_vec, k)
         else:
             sql = """
-                SELECT id, company, fiscal_year, section, chunk_text, 1 - (embedding <=> %s::vector) AS score
+                SELECT id, company, fiscal_year, section, chunk_text,
+                    1 - (embedding <=> %s::vector) AS score
                 FROM chunks
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s

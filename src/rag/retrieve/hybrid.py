@@ -6,8 +6,6 @@ rows identity-match despite different start_token/end_token placeholders.
 """
 from __future__ import annotations
 
-import numpy as np
-
 from rag.ingest.chunker import Chunk
 from rag.retrieve.keyword import KeywordIndex
 from rag.retrieve.pg_dense import PgDenseIndex

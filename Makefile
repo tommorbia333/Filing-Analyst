@@ -1,4 +1,4 @@
-.PHONY: install lint test index ask eval db-up db-down db-schema db-load
+.PHONY: install lint test index ask eval eval-faithful db-up db-down db-schema db-load
 install:
 	uv venv && uv pip install -e ".[dev]"
 lint:
@@ -11,6 +11,8 @@ ask:
 	uv run python scripts/ask.py
 eval:
 	uv run python scripts/eval_retrieval.py
+eval-faithful:
+	uv run python scripts/eval_faithfulness.py
 db-up:
 	docker compose up -d
 db-down:

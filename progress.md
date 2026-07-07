@@ -35,7 +35,7 @@
 
 **Data note:** the corpus is a single company's 10-K filings, parsed into their standard sections with `{company, fiscal_year, section}` metadata per record. Prefer a pre-parsed EDGAR dataset (e.g. `eloukas/edgar-corpus`, which already splits filings into sections with `cik`/`year`) or `edgar-crawler` JSON output over writing a filing parser from scratch — parsing raw HTML filings is a time-sink and not the point of the project.
 
-**Current state:** see the Progress tracker below. The active task is whatever is marked 📍. Phases 4–5 are sealed previews — do not implement or expand them until the human unlocks them after Week 3 / Phase 4 respectively.
+**Current state:** Week 2 Stations 6–9 complete. **Station 10 (faithfulness judge + scale gold) is active and nearly done** — `eval/judge.py` and `make eval-faithful` exist; gold at 14/~25 with one absence case; remaining work is grow gold, run end-to-end faithfulness eval, spot-check judge output, and answer Station 10 questions. Phases 4–5 remain sealed.
 
 ---
 
@@ -96,7 +96,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Wk2 | 7 · Keyword retrieval (BM25/FTS) | ✅ done |
 | Wk2 | 8 · Hybrid fusion (RRF) | ✅ done — hit@5 0.385 / MRR@5 0.172 |
 | Wk2 | 9 · Metadata filter + re-measure | ✅ done — hit@5 1.000 / MRR@5 1.000 (filtered) |
-| Wk2 | 10 · Faithfulness judge + scale gold | 📍 **active** |
+| Wk2 | 10 · Faithfulness judge + scale gold | 📍 **active** — judge wired, gold 14/~25 |
 | Wk3 | Polish, cost/latency, UI | 🔒 sealed |
 | Phase 4 | API + agent loop + one legacy hook | 🔒 sealed |
 | Phase 5 | Production slice + second integration | 🔒 sealed |
@@ -105,7 +105,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 
 ## Design decisions log
 
-| Component | Choice | Why (your words) | Alternatives you considered |
+| Component | Choice | Why | Alternatives you considered |
 |---|---|---|---|
 | Chunking | fixed-size token + overlap | groups together text for quicker processing and better context retrieval | |
 | Chunk metadata | `{company, fiscal_year, section}` per chunk | chunked data after it was crawled/scraped by EDGAR, used the keywords and prepared for embedding | |
@@ -115,7 +115,7 @@ These are *yours to produce* — they're interview bait and they shape the gold 
 | Generator | Claude Haiku 4.5 | Strong, legacy model to implement, easy to use, lower cost than implementing Opus or a more expensive model especially since we just need a quick generator | |
 | Keyword retrieval (wk2) | FTS / BM25 | Chose BM25 because it's more up-to-date with current standards and I want more practice with BM25 and how it works/algorithm practice and I want less SQL if possible. I also think that the IDF characteristic would be really useful for this kind of corpus since there are certain words that appear a bit more consistently across the years and others that are a bit rarer; this would hypothetically help with the year problem and also finding important sections for a given noun or proper noun | Considered FTS because it's one store, easier to implement and more of a 'implement over existing infrastructure' type of practice |
 | Hybrid fusion (wk2) | RRF | Fuses together BM25 and dense into a hybrid search eval. Note: hit_rate@5 is 0.385 after hybrid, 0.385 at baseline. MRR@5 is 0.172 at hybrid, 0.179 at dense. Have not implented filter yet; that is the next step | |
-| Metadata filter (wk2) | pre- or post-filter | | |
+| Metadata filter (wk2) | pre- or post-filter | went with pre-filter because it is more relevant for reducing the number of chunks that we will refer to due to duplicate data across the years | |
 | Faithfulness judge (wk2) | Claude Sonnet | | |
 
 ---
@@ -309,7 +309,7 @@ Goal of the week: a working `ingest → embed → retrieve → answer` pipeline 
 
 ---
 
-# Phase 2 — Week 2: hybrid retrieval + storage + eval harness  *(CURRENT PHASE)*
+# Phase 2 — Week 2: hybrid retrieval + storage + eval harness  *(CURRENT PHASE — Station 10)*
 
 Goal of the week: move off brute-force into a real store, add the two things dense-only can't do — **exact keyword matching** and **metadata filtering** — fuse them, and **measure the improvement over your Week 1 baseline** (hit-rate@5 = 0.385, MRR@5 = 0.179). Then add the **faithfulness judge** so you're grading answers, not just retrieval.
 
@@ -484,14 +484,26 @@ Implemented another change for COVID-19 since it still wasn't getting picked up 
 
 **Questions to answer:**
 1. What does faithfulness catch that hit-rate@k cannot (e.g. right passage retrieved, answer still invents a number)? And the reverse — what does retrieval catch that the judge can't?
+
+    a. 
+
 2. Your judge is an LLM grading an LLM. Name its failure modes (self-preference, length/verbosity bias, being swayed by a confident-but-wrong answer) and one concrete guard for each.
+
+    a. 
+
 3. Why judge *faithfulness to retrieved context* rather than *correctness against the filing*? What does that choice let you evaluate honestly without being a finance expert — and what does it deliberately **not** measure?
+
+    a. 
 
 **Definition of done:** gold ~25 incl. an absence case · relevance rule explicit in harness · faithfulness judge runs and is spot-checked against your own reading · retrieval + faithfulness numbers recorded · Design-log rows filled · committed. **→ Week 2 complete; ask the chat to unlock Phase 3.**
 
 **Notes & answers:**
 ```
-(write here)
+In progress (2026-07-06):
+- judge_faithfulness() implemented in src/rag/eval/judge.py (Sonnet, same retry pattern as generate)
+- scripts/eval_faithfulness.py + make eval-faithful: hybrid retrieve → Haiku answer → Sonnet judge
+- Gold grown to 14 items; added FY2019 Copilot absence case (absence: true)
+- Still to do: grow gold to ~25, run full faithfulness eval + record rate, spot-check judge vs own reading, answer Q1–Q3 below
 ```
 
 # Phase 3 — Week 3: polish, cost/latency, UI  🔒 SEALED
@@ -620,3 +632,4 @@ make ask                 # query end-to-end
 - *(date)* — Pivoted corpus: JDM / cognitive biases → **one company's SEC 10-K filings across fiscal years** (internal-document-assistant archetype; SEC as public proxy for a private corpus). Eval model set to **retrieval-gold + faithfulness**. Confusability axis is now temporal (same section, adjacent years). Chunker work (Station 1) carries over unchanged; ingestion gains section/metadata parsing; Station 5 reframed to retrieval gold.
 - *(date)* — Added Phase 4 (API + explicit agent loop + one legacy hook) and Phase 5 (production slice) previews; corpus locked to **Microsoft 10-Ks, FY2019–FY2025** (fiscal year ends June 30 — phrase/label everything by fiscal year).
 - **2026-07-03 — Week 1 (Phase 1) COMPLETE.** End-to-end dense pipeline runs: ingest → chunk (+metadata) → embed → brute-force cosine → Haiku generation → retrieval eval. Gold set authored (13 items → `data/qa/gold.jsonl`). Baseline: **hit-rate@5 = 0.385, MRR@5 = 0.179**; dominant failure = *right topic, wrong fiscal year* — the exact temporal confusion the Week 2 metadata filter is built to fix. Phase 2 unlocked (Stations 6–10). Active: Station 6 (Postgres + pgvector).
+- **2026-07-06 — Week 2 Stations 6–9 COMPLETE.** pgvector store live (HNSW); chunk IDs fixed to `{source}::{section}::{chunk_index}` after Postgres collision dropped rows (0.231 → 0.385). BM25 keyword + RRF hybrid implemented; metadata pre-filter is the headline fix (**hit@5 0.385 → 1.000** on gold after filter + relevance-rule tweaks). COVID-19 tokenization normalized (`covid - 19` ↔ `covid-19`). **Station 10 active:** faithfulness judge + `make eval-faithful` wired; gold at 14/~25 with one absence case.

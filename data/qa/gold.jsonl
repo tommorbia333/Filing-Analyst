@@ -11,11 +11,7 @@
 {"question": "What were some uncertain tax positions in FY2019?", "fiscal_year": 2019, "section": "Item 7", "match_text": "tax positions"}
 {"question": "How did Microsoft's acquisition of GitHub in FY2019 impact the products and clients that Microsoft can target?", "fiscal_year": 2019, "section": "Item 1A", "match_text": "GitHub"}
 {"question": "By how much did Microsoft's operating income change from FY2022 to FY2023?", "fiscal_year": 2023, "section": "Item 7", "match_text": "operating income"}
+{"question": "In FY2019, what did Microsoft say about Copilot?", "fiscal_year": 2019, "section": "Item 7", "match_text": "Copilot", "absence": true}
 
-// Relevance rule: hit = chunk whose fiscal_year + section match gold.
-// Optional match_text only for distinctive tokens (Copilot, COVID-19, GitHub, …).
-// is_relevant normalizes hyphen spacing so "COVID-19" matches corpus "covid - 19".
-//
-// No absence case yet — Station 10: e.g. Copilot in FY2019 → not disclosed.
-// Comparison questions are only clean if one filing's MD&A states the YoY line;
-// true cross-filing compare is Phase 4 compare_passages.
+// Relevance: fiscal_year + section must match. match_text optional for distinctive tokens.
+// absence: true → topic not in corpus; correct answer is "not in context".
