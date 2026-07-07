@@ -1,6 +1,6 @@
 # Filing Analyst: grounded, year-aware QA over SEC 10-Ks
 
-Filing Analyst is a retrieval-augmented QA system over one company's SEC 10-K annual filings across several fiscal years. I built it as a stand-in for the real problem it models: answering questions over a private enterprise document store where the same templated language repeats year after year. SEC filings are public, so they're a good proxy — and Microsoft's Risk Factors and MD&A sections reuse near-identical boilerplate across fiscal years, which is exactly the confusability that breaks naive semantic search.
+Filing Analyst is a retrieval-augmented QA system over one company's SEC 10-K annual filings across several fiscal years. I built it as a stand-in for the real problem it models: answering questions over a private enterprise document store where the same templated language repeats year after year. SEC filings are public, so they're a good proxy, and Microsoft's Risk Factors and MD&A sections reuse near-identical boilerplate across fiscal years, which is exactly the confusability that breaks naive semantic search.
 
 No orchestration frameworks (LangChain, LlamaIndex, etc.) were used; chunking, embedding, retrieval, generation, and evaluation are all implemented explicitly and can be walked through line by line.
 
